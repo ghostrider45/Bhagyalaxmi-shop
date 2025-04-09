@@ -279,32 +279,31 @@ server.put('/api/invoices/:id/pay', async (req, res) => {
 });
 server.get('/api/invoices/party', async (req, res) => {
     try {
-        const snapshot = await getDocs(query(collection(db, 'purchase')));
+        const snapshot = await getDocs(collection(db, 'purchase'));
 
         const invoices = snapshot.docs.map(doc => {
             const data = doc.data();
             let formattedDate = 'N/A';
 
-            console.log("Raw date from Firestore:", data.date); // Debug log
-
+            // Handle various possible Firestore date formats
             if (data.date) {
                 try {
                     if (typeof data.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.date)) {
-                        // Handle "YYYY-MM-DD" string format
+                        // Format: "YYYY-MM-DD"
                         formattedDate = new Date(data.date).toLocaleDateString('en-IN', {
                             year: 'numeric',
                             month: 'short',
                             day: 'numeric'
                         });
                     } else if (data.date.seconds) {
-                        // Handle Firestore Timestamp
+                        // Firestore Timestamp
                         formattedDate = new Date(data.date.seconds * 1000).toLocaleDateString('en-IN', {
                             year: 'numeric',
                             month: 'short',
                             day: 'numeric'
                         });
                     } else {
-                        console.warn(`Unexpected date format: ${data.date}`);
+                        console.warn(`Unexpected date format: ${JSON.stringify(data.date)}`);
                     }
                 } catch (err) {
                     console.error(`Date parsing error: ${err.message}`);
@@ -322,7 +321,7 @@ server.get('/api/invoices/party', async (req, res) => {
         return res.status(200).json({ success: true, data: invoices });
 
     } catch (error) {
-        console.error(`Error fetching invoices`, error);
+        console.error(`Error fetching invoices:`, error);
         return res.status(500).json({ success: false, message: 'Failed to fetch invoices' });
     }
 });
