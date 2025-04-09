@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/css/bootstrap.min.css">
+    <style>
+        .invoice-body { max-width: 800px; margin: 2rem auto; padding: 2rem; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        .client-info, .invoice-details, .items-section, .totals { margin-bottom: 2rem; }
+        .item-row { display: grid; grid-template-columns: 2fr 2fr 1fr 1fr 1fr 40px; gap: 10px; margin-bottom: 10px; align-items: center; }
+        .delete-btn { color: red; cursor: pointer; font-size: 1.5rem; }
+        input { padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; width: 100%; }
+        button { padding: 0.5rem 1rem; margin-right: 1rem; }
+        .totals { display: grid; grid-template-columns: auto 200px; gap: 10px; justify-content: end; }
+
+
+
+        /* Style for serial number field */
+        #serial_number {
+            background-color: #f8f9fa;
+            font-weight: bold;
+            color: #000;
+        }
+
+        /* Custom date input styling for DD/MM/YY format */
+        input[type="date"] {
+            position: relative;
+        }
+
+        /* Hide the default date format */
+        input[type="date"]::-webkit-datetime-edit {
+            display: none;
+        }
+
+        input[type="date"]::-webkit-calendar-picker-indicator {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            color: transparent;
+            cursor: pointer;
+        }
+
+        /* Add custom date display */
+        input[type="date"]:before {
+            content: attr(data-date);
+            position: absolute;
+            top: 7px;
+            left: 10px;
+        }
+
+        /* Modal styles */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .modal-dialog {
+            max-width: 500px;
+            width: 100%;
+            margin: 30px auto;
+        }
+
+        .modal-content {
+            background-color: #fff;
+            border-radius: 5px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .modal-header {
+            padding: 15px;
+            border-bottom: 1px solid #e9ecef;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-body {
+            padding: 15px;
+        }
+
+        .modal-footer {
+            padding: 15px;
+            border-top: 1px solid #e9ecef;
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <form id="invoiceForm" class="invoice-body" onsubmit="return submitForm(event)">
+            <div class="client-info">
+                <h3 class="mb-4">Purchase Entry</h3>
+                <input type="text" id="company_name" class="form-control mb-2" placeholder="Company Name" required>
+                <input type="text" id="customer_name" class="form-control mb-2" placeholder="Shop Code" required>
+            </div>
+
+            <div class="invoice-details">
+                <h3 class="mb-4">Invoice Details</h3>
+                <div class="row">
+                    <div class="col-md-2">
+                        <label for="serial_number">Serial No:</label>
+                        <input type="text" id="serial_number" class="form-control" readonly>
+                    </div>
+                    <div class="col-md-2">
+                        <label for="reference_number">Bill No:</label>
+                        <input type="text" id="reference_number" class="form-control" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="date">Date (DD/MM/YY):</label>
+                        <input type="date" id="theDate" class="form-control" required>
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="items-section">
+                <h3 class="mb-4">Items</h3>
+                <div id="itemsContainer"></div>
+                <button type="button" id="addItemBtn" class="btn btn-primary mt-3" onclick="addItem()">Add Item</button>
+            </div>
+
+            <div class="totals">
+                <label for="subtotal">Subtotal:</label>
+                <input type="number" id="subtotal" class="form-control" readonly>
+
+                <label for="discount">Discount:</label>
+                <input type="number" id="discount" class="form-control" oninput="calculateTotals()">
+
+                <label for="other_charges">Other Charges:</label>
+                <input type="number" id="other_charges" class="form-control" oninput="calculateTotals()">
+
+                <label for="total_amount">Total Amount:</label>
+                <input type="number" id="total_amount" class="form-control" readonly>
+            </div>
+
+            <div class="actions">
+                <button type="submit" class="btn btn-success">Save Invoice</button>
+                <button type="button" class="btn btn-secondary" onclick="printInvoice()">Print</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Modal for adding new item codes (hidden by default) -->
+    <div id="itemCodeModal" class="modal" tabindex="-1" role="dialog" style="display: none;">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add New Item Code</h5>
+                    <button type="button" class="close" onclick="closeItemCodeModal()" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="newItemCode">Item Code:</label>
+                        <input type="text" class="form-control" id="newItemCode" placeholder="Enter short code (e.g. LJ)" maxlength="5">
+                    </div>
+                    <div class="form-group">
+                        <label for="newItemName">Item Name:</label>
+                        <input type="text" class="form-control" id="newItemName" placeholder="Enter full item name (e.g. LAPSI JADA)">
+                    </div>
+                    <div class="form-group mt-4">
+                        <label>Existing Item Codes:</label>
+                        <div class="existing-codes-container" style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 10px;">
+                            <table class="table table-sm table-striped" id="existingCodesTable">
+                                <thead>
+                                    <tr>
+                                        <th>Code</th>
+                                        <th>Name</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Will be populated dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeItemCodeModal()">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveNewItemCode()">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Format and set today's date
+        const today = new Date();
+        const isoDate = today.toISOString().split('T')[0]; // YYYY-MM-DD format for the input value
+        document.getElementById('theDate').value = isoDate;
+
+        // Format date as DD/MM/YY for display
+        const day = today.getDate().toString().padStart(2, '0');
+        const month = (today.getMonth() + 1).toString().padStart(2, '0');
+        const year = today.getFullYear().toString().slice(-2); // Get last 2 digits of year
+        const formattedDate = `${day}/${month}/${year}`;
+
+        // Set the data-date attribute for display
+        document.getElementById('theDate').setAttribute('data-date', formattedDate);
+
+        // Update the displayed date whenever the date input changes
+        document.getElementById('theDate').addEventListener('change', function() {
+            const selectedDate = new Date(this.value);
+            const day = selectedDate.getDate().toString().padStart(2, '0');
+            const month = (selectedDate.getMonth() + 1).toString().padStart(2, '0');
+            const year = selectedDate.getFullYear().toString().slice(-2);
+            const formattedDate = `${day}/${month}/${year}`;
+
+            this.setAttribute('data-date', formattedDate);
+        });
+
+        function resetDateToToday() {
+            const today = new Date();
+            const isoDate = today.toISOString().split('T')[0];
+            document.getElementById('theDate').value = isoDate;
+
+            const day = today.getDate().toString().padStart(2, '0');
+            const month = (today.getMonth() + 1).toString().padStart(2, '0');
+            const year = today.getFullYear().toString().slice(-2);
+            const formattedDate = `${day}/${month}/${year}`;
+
+            document.getElementById('theDate').setAttribute('data-date', formattedDate);
+        }
+
+        // Set default serial number to 1
+        document.getElementById('serial_number').value = '1';
+
+        // Item code mapping - moved to a variable that can be updated
+        let itemMapping = {
+            "LJ": "LAPSI JADA", "BBL": "ZERO NO LAPSI", "BH": "BHAGAR", "IR": "IDLI RAVA",
+            "JR": "JADA RAVA", "BR": "BARIK RAVA", "PP": "PATALA POHA", "JP": "JADA POHA",
+            "SD": "SINGDANA", "DS": "DOLPIN SABUDANA", "BSA": "BARIK SABUDANA",
+            "MA": "MAIDA", "PTS": "PITHI SAKHAR", "AR": "ARAROT POWDER",
+            "SV": "SOYA VADI", "BSV": "BARIK SOYA VADI", "KU": "KULTHI", "KUM": "KUMKUM","KM":"KALA MIRI","A":"ANJEER"
+        };
+
+        // Function to show the item code modal
+        function showItemCodeModal() {
+            document.getElementById('newItemCode').value = '';
+            document.getElementById('newItemName').value = '';
+            document.getElementById('itemCodeModal').style.display = 'block';
+            document.getElementById('newItemCode').focus();
+
+            // Populate the existing item codes table
+            populateExistingCodes();
+
+            // Setup keyboard navigation for the modal
+            setupModalKeyboardNavigation();
+        }
+
+        // Function to populate the existing item codes table
+        function populateExistingCodes() {
+            const tableBody = document.querySelector('#existingCodesTable tbody');
+            tableBody.innerHTML = ''; // Clear existing rows
+
+            // Sort the item codes alphabetically
+            const sortedCodes = Object.keys(itemMapping).sort();
+
+            // Add a row for each item code
+            sortedCodes.forEach(code => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${code}</td>
+                    <td>${itemMapping[code]}</td>
+                `;
+
+                // Add click event to fill the form with this item code
+                row.addEventListener('click', function() {
+                    document.getElementById('newItemCode').value = code;
+                    document.getElementById('newItemName').value = itemMapping[code];
+                });
+
+                tableBody.appendChild(row);
+            });
+        }
+
+        // Setup keyboard navigation for the modal fields
+        function setupModalKeyboardNavigation() {
+            const newItemCodeField = document.getElementById('newItemCode');
+            const newItemNameField = document.getElementById('newItemName');
+
+            // Navigate from item code to item name with Enter
+            newItemCodeField.addEventListener('keydown', function(event) {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    newItemNameField.focus();
+                } else if (event.key === 'Escape') {
+                    closeItemCodeModal();
+                }
+            });
+
+            // Save when pressing Enter in the item name field
+            newItemNameField.addEventListener('keydown', function(event) {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    saveNewItemCode();
+                } else if (event.key === 'Escape') {
+                    closeItemCodeModal();
+                }
+            });
+        }
+
+        // Function to close the item code modal
+        function closeItemCodeModal() {
+            document.getElementById('itemCodeModal').style.display = 'none';
+        }
+
+        // Function to save a new item code
+        function saveNewItemCode() {
+            const itemCode = document.getElementById('newItemCode').value.trim().toUpperCase();
+            const itemName = document.getElementById('newItemName').value.trim().toUpperCase();
+
+            if (itemCode === '' || itemName === '') {
+                alert('Please enter both item code and item name');
+                return;
+            }
+
+            // Check if item code already exists
+            if (itemMapping[itemCode]) {
+                const confirmOverwrite = confirm(`Item code "${itemCode}" already exists with name "${itemMapping[itemCode]}". Do you want to overwrite it?`);
+                if (!confirmOverwrite) {
+                    return;
+                }
+            }
+
+            // Add the new item code to the mapping
+            itemMapping[itemCode] = itemName;
+
+            // Save to localStorage for persistence
+            localStorage.setItem('itemMapping', JSON.stringify(itemMapping));
+
+            // Refresh the table of existing codes
+            populateExistingCodes();
+
+            // Clear the form fields for another entry
+            document.getElementById('newItemCode').value = '';
+            document.getElementById('newItemName').value = '';
+            document.getElementById('newItemCode').focus();
+
+            alert(`Item code "${itemCode}" for "${itemName}" has been saved successfully!`);
+        }
+
+        // Load item mapping from localStorage if available
+        const savedItemMapping = localStorage.getItem('itemMapping');
+        if (savedItemMapping) {
+            itemMapping = JSON.parse(savedItemMapping);
+        }
+
+        // Add keyboard event listener for 'F' key to show the modal
+        document.addEventListener('keydown', function(event) {
+            // Check if the pressed key is 'F' or 'f'
+            if (event.key === 'f' || event.key === 'F') {
+                // Only show the modal if we're not in an input field
+                if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+                    event.preventDefault();
+                    showItemCodeModal();
+                }
+            }
+        });
+
+        // Prevent form submission on Enter key
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Enter' && event.target.tagName !== 'TEXTAREA') {
+                // Allow the enter handler to work but prevent form submission
+                if (!event.target.classList.contains('nav-enter-handled')) {
+                    event.preventDefault();
+                }
+            }
+        });
+
+        // Setup form field navigation with Enter key
+        document.addEventListener('DOMContentLoaded', function() {
+            setupEnterKeyNavigation();
+            setupTotalsNavigation();
+            addItem(); // Add first item row automatically
+        });
+
+        function setupEnterKeyNavigation() {
+            // Define the navigation order of form fields
+            const formFields = [
+                'company_name',
+                'customer_name',
+                'reference_number',
+                'theDate'
+            ];
+            // Note: serial_number is not included as it's read-only
+
+            // Add event listeners for each field
+            formFields.forEach((fieldId, index) => {
+                const field = document.getElementById(fieldId);
+                field.addEventListener('keydown', function(event) {
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        event.target.classList.add('nav-enter-handled');
+                        setTimeout(() => event.target.classList.remove('nav-enter-handled'), 100);
+
+                        if (index < formFields.length - 1) {
+                            document.getElementById(formFields[index + 1]).focus();
+                        } else {
+                            // If we're at the last field, focus on the first item code input
+                            const firstItemCodeInput = document.querySelector('.item-code');
+                            if (firstItemCodeInput) {
+                                firstItemCodeInput.focus();
+                            } else {
+                                addItem(); // If no items exist, add one and focus on it
+                            }
+                        }
+                    }
+                });
+            });
+        }
+
+        function setupTotalsNavigation() {
+            // Set up navigation for discount and other charges fields
+            const discountField = document.getElementById('discount');
+            const otherChargesField = document.getElementById('other_charges');
+
+            discountField.addEventListener('keydown', function(event) {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    event.target.classList.add('nav-enter-handled');
+                    setTimeout(() => event.target.classList.remove('nav-enter-handled'), 100);
+                    otherChargesField.focus();
+                }
+            });
+
+            otherChargesField.addEventListener('keydown', function(event) {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    event.target.classList.add('nav-enter-handled');
+                    setTimeout(() => event.target.classList.remove('nav-enter-handled'), 100);
+                    // Focus on the Save button or you can choose to do nothing
+                    document.querySelector('button[type="submit"]').focus();
+                }
+            });
+        }
+
+        function addItem() {
+            const container = document.getElementById('itemsContainer');
+            const row = document.createElement('div');
+            row.classList.add('item-row');
+            row.innerHTML = `
+                <input type="text" name="item_code[]" class="form-control item-code" placeholder="Item Code" required>
+                <input type="text" name="item_name[]" class="form-control item-name" placeholder="Item Name" readonly>
+                <input type="number" name="quantity[]" class="form-control item-quantity" placeholder="Quantity" value="1" min="1" oninput="calculateTotals()" required>
+                <input type="number" name="rate[]" class="form-control item-rate" placeholder="Rate" step="0.01" oninput="calculateTotals()" required>
+                <input type="number" name="total[]" class="form-control" readonly>
+                <span class="delete-btn" onclick="this.parentElement.remove(); calculateTotals();">&times;</span>
+            `;
+            container.appendChild(row);
+
+            const itemCodeInput = row.querySelector(".item-code");
+            const itemRateInput = row.querySelector(".item-rate");
+            const itemQuantityInput = row.querySelector(".item-quantity");
+
+            // Item code Enter key handler
+            itemCodeInput.addEventListener("keydown", function(event) {
+                if (event.key === "Enter") {
+                    event.preventDefault();
+                    event.target.classList.add('nav-enter-handled');
+                    setTimeout(() => event.target.classList.remove('nav-enter-handled'), 100);
+
+                    const itemCode = this.value.toUpperCase();
+
+                    if (itemMapping[itemCode]) {
+                        this.nextElementSibling.value = itemMapping[itemCode];
+                        itemQuantityInput.focus(); // Focus on quantity field first
+                    } else {
+                        alert("Item code not found!");
+                        this.focus();
+                    }
+                }
+            });
+
+            // Quantity Enter key handler
+            itemQuantityInput.addEventListener("keydown", function(event) {
+                if (event.key === "Enter") {
+                    event.preventDefault();
+                    event.target.classList.add('nav-enter-handled');
+                    setTimeout(() => event.target.classList.remove('nav-enter-handled'), 100);
+                    itemRateInput.focus();
+                }
+            });
+
+            // Rate Enter key handler
+            itemRateInput.addEventListener("keydown", function(event) {
+                if (event.key === "Enter") {
+                    event.preventDefault();
+                    event.target.classList.add('nav-enter-handled');
+                    setTimeout(() => event.target.classList.remove('nav-enter-handled'), 100);
+
+                    // Check if this is the last item row
+                    const allRows = document.querySelectorAll('.item-row');
+                    const isLastRow = allRows[allRows.length - 1] === this.closest('.item-row');
+
+                    if (isLastRow) {
+                        addItem(); // Add a new item row when pressing Enter in quantity field
+                    } else {
+                        // Find the next row's item code field and focus on it
+                        const nextRow = this.closest('.item-row').nextElementSibling;
+                        if (nextRow) {
+                            nextRow.querySelector('.item-code').focus();
+                        }
+                    }
+                }
+            });
+
+            itemCodeInput.focus();
+            calculateTotals();
+        }
+
+        function calculateTotals() {
+            let subtotal = [...document.querySelectorAll('.item-row')].reduce((sum, row) => {
+                const rate = parseFloat(row.querySelector('[name="rate[]"]').value) || 0;
+                const quantity = parseInt(row.querySelector('[name="quantity[]"]').value) || 0;
+                const total = rate * quantity;
+                row.querySelector('[name="total[]"]').value = total.toFixed(2);
+                return sum + total;
+            }, 0);
+
+            const discountPercent = parseFloat(document.getElementById('discount').value) || 0;
+            const discountAmount = (discountPercent / 100) * subtotal;
+            const otherCharges = parseFloat(document.getElementById('other_charges').value) || 0;
+
+            document.getElementById('subtotal').value = subtotal.toFixed(2);
+            document.getElementById('total_amount').value = (subtotal - discountAmount + otherCharges).toFixed(2);
+        }
+
+        function printInvoice() {
+            window.print();
+        }
+
+        function submitForm(event) {
+            event.preventDefault();
+            saveInvoice();
+            return false;
+        }
+
+        async function saveInvoice() {
+            const invoiceData = {
+                company_name: document.getElementById('company_name').value,
+                customer_name: document.getElementById('customer_name').value,
+                reference_number: document.getElementById('reference_number').value,
+                // Store both the ISO date and the formatted display date
+                date: document.getElementById('theDate').value,
+                dateFormatted: document.getElementById('theDate').getAttribute('data-date'),
+                subtotal: parseFloat(document.getElementById('subtotal').value) || 0,
+                discount: parseFloat(document.getElementById('discount').value) || 0,
+                other_charges: parseFloat(document.getElementById('other_charges').value) || 0,
+                total_amount: parseFloat(document.getElementById('total_amount').value) || 0,
+                payment_status: "unpaid",  // Set default payment status
+                serialNumber: parseInt(document.getElementById('serial_number').value) || 1,
+                items: [...document.querySelectorAll('.item-row')].map(row => ({
+                    item_code: row.querySelector('[name="item_code[]"]').value,
+                    item_name: row.querySelector('[name="item_name[]"]').value,
+                    rate: parseFloat(row.querySelector('[name="rate[]"]').value) || 0,
+                    quantity: parseInt(row.querySelector('[name="quantity[]"]').value) || 0,
+                    total: parseFloat(row.querySelector('[name="total[]"]').value) || 0
+                }))
+            };
+
+            try {
+                const response = await fetch('/api/invoices', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(invoiceData)
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    // Update the serial number field with the assigned serial number
+                    document.getElementById('serial_number').value = result.data.serialNumber;
+
+                    alert('Invoice saved successfully! Serial Number: ' + result.data.serialNumber);
+
+                    // Wait a moment to show the serial number before resetting the form
+                    setTimeout(() => {
+                        document.getElementById('invoiceForm').reset();
+                        document.getElementById('itemsContainer').innerHTML = '';
+                        // Set serial number for next invoice (increment by 1)
+                        document.getElementById('serial_number').value = (result.data.serialNumber + 1).toString();
+
+                        // Reset date to today with proper formatting
+                        resetDateToToday();
+
+                        addItem(); // Add first item row after form reset
+                    }, 2000); // 2 second delay
+                } else {
+                    alert('Error: ' + result.message);
+                }
+            } catch (error) {
+                console.error('Error saving invoice:', error);
+                alert('Failed to save invoice. Please try again.');
+            }
+        }
+    </script>
+
+</body>
+</html>

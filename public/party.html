@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Party Invoice Search</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .search-container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        input[type="text"] {
+            padding: 10px;
+            width: 300px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .results-table th,
+        .results-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .results-table th {
+            background-color: #f8f9fa;
+        }
+
+        .status-unpaid {
+            color: #dc3545;
+            font-weight: bold;
+        }
+
+        .status-paid {
+            color: #28a745;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="search-container">
+        <h1>Party Invoice Search</h1>
+        <input type="text" id="partySearch" placeholder="Enter party name to filter results...">
+    </div>
+
+    <div id="resultsContainer"></div>
+
+    <script>
+        let allInvoices = [];
+
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchAllInvoices();
+            
+            // Add event listener for live filtering
+            document.getElementById('partySearch').addEventListener('input', filterInvoices);
+        });
+
+        async function fetchAllInvoices() {
+            try {
+                console.log("Fetching all invoices...");
+                const response = await fetch('http://localhost:3001/api/invoices/party');
+                if (!response.ok) throw new Error('Failed to fetch invoices');
+
+                const data = await response.json();
+                if (!data.success) throw new Error(data.message || 'Failed to fetch data');
+
+                allInvoices = data.data;
+                displayResults(allInvoices);
+            } catch (error) {
+                console.error('Error fetching invoices:', error);
+                document.getElementById('resultsContainer').innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        }
+
+        function filterInvoices() {
+            const partyName = document.getElementById('partySearch').value.trim().toLowerCase();
+            
+            if (!partyName) {
+                displayResults(allInvoices);
+                return;
+            }
+
+            const filteredInvoices = allInvoices.filter(invoice => 
+                invoice.party_name.toLowerCase().includes(partyName)
+            );
+
+            displayResults(filteredInvoices);
+        }
+
+        function displayResults(invoices) {
+            const resultsContainer = document.getElementById('resultsContainer');
+
+            if (invoices.length === 0) {
+                resultsContainer.innerHTML = `<p>No invoices found</p>`;
+                return;
+            }
+
+            let html = `
+                <table class="results-table">
+                    <thead>
+                        <tr>
+                            <th>Party Name</th>
+                            <th>Date</th>
+                            <th>Amount</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            invoices.forEach(invoice => {
+                html += `
+                    <tr>
+                        <td>${invoice.party_name}</td>
+                        <td>${invoice.date}</td>
+                        <td>₹${invoice.amount.toLocaleString()}</td>
+                        <td class="status-${invoice.payment_status}">${invoice.payment_status}</td>
+                    </tr>
+                `;
+            });
+
+            html += `</tbody></table>`;
+            resultsContainer.innerHTML = html;
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sales Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold mb-6">Invoices</h1>
+        <div id="debug-info" class="mb-4 p-4 bg-yellow-100 rounded-lg hidden">
+            <h2 class="font-bold mb-2">Debug Information</h2>
+            <pre id="debug-content" class="whitespace-pre-wrap"></pre>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full bg-white shadow-md rounded-lg">
+                <thead>
+                    <tr class="bg-gray-200 text-gray-700">
+                        <th class="py-3 px-6 text-left">Company Name</th>
+                        <th class="py-3 px-6 text-left">Date</th>
+                        <th class="py-3 px-6 text-left">Amount</th>
+                        <th class="py-3 px-6 text-left">Payment</th>
+                    </tr>
+                </thead>
+                <tbody id="invoices-table">
+                    <tr><td colspan="4" class="text-center py-4">Loading invoices...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <script>
+        // Debug helper function
+        function showDebugInfo(info) {
+            const debugDiv = document.getElementById('debug-info');
+            const debugContent = document.getElementById('debug-content');
+            debugDiv.classList.remove('hidden');
+            debugContent.textContent = JSON.stringify(info, null, 2);
+        }
+
+        async function fetchInvoices() {
+            const tableBody = document.getElementById('invoices-table');
+            
+            try {
+                console.log('Fetching invoices...');
+                const response = await fetch('/api/invoices');
+                
+                // Log response details for debugging
+                const responseDetails = {
+                    status: response.status,
+                    statusText: response.statusText,
+                    headers: Object.fromEntries(response.headers.entries())
+                };
+                console.log('Response details:', responseDetails);
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Error response:', errorText);
+                    
+                    showDebugInfo({
+                        error: `HTTP error! status: ${response.status}`,
+                        responseText: errorText,
+                        details: responseDetails
+                    });
+                    
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                console.log('Received data:', data);
+
+                if (!data.success) {
+                    throw new Error(data.message || 'Failed to fetch invoices');
+                }
+
+                const invoices = data.data || [];
+                
+                if (invoices.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan="4" class="text-center py-4">No invoices found.</td></tr>';
+                    return;
+                }
+
+                // Clear existing content
+                tableBody.innerHTML = '';
+
+                // Add each invoice to the table
+                invoices.forEach(invoice => {
+                    const date = invoice.date 
+                    ? new Date(invoice.date).toLocaleDateString('en-IN', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric'
+                    })
+                    : 'Date not available';
+                
+
+                    const row = document.createElement('tr');
+                    row.className = "border-b hover:bg-gray-100";
+                    row.innerHTML = `
+                        <td class="py-3 px-6">${invoice.company_name || 'N/A'}</td>
+                        <td class="py-3 px-6">${date}</td>
+                        <td class="py-3 px-6 font-bold text-green-600">₹${invoice.total_amount?.toFixed(2) || '0.00'}</td>
+                        <td class="py-3 px-6">
+                            <button id="pay-btn-${invoice.id}"
+                                onclick="handlePayment('${invoice.id}')"
+                                class="px-3 py-1 ${invoice.payment_status === 'paid' ? 'bg-gray-500' : 'bg-green-500'} text-white text-sm rounded hover:bg-green-600 transition-colors"
+                                ${invoice.payment_status === 'paid' ? 'disabled' : ''}>
+                                ${invoice.payment_status === 'paid' ? 'Paid' : 'Pay Now'}
+                            </button>
+                        </td>
+                    `;
+                    tableBody.appendChild(row);
+                });
+
+            } catch (error) {
+                console.error('Error:', error);
+                
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="text-center py-4 text-red-600">
+                            Failed to load invoices: ${error.message}
+                        </td>
+                    </tr>
+                `;
+                
+                showDebugInfo({
+                    error: error.message,
+                    stack: error.stack,
+                    timestamp: new Date().toISOString()
+                });
+            }
+        }
+
+        // Function to handle the payment process
+        async function handlePayment(invoiceId) {
+            const button = document.getElementById(`pay-btn-${invoiceId}`);
+            if (!button) return;
+            
+            try {
+                console.log(`Processing payment for invoice ${invoiceId}...`);
+
+                // Make the API call to update the payment status
+                const response = await fetch(`/api/invoices/${invoiceId}/pay`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to process payment');
+                }
+
+                // Update the button text and state
+                button.textContent = 'Paid';
+                button.classList.remove('bg-green-500');
+                button.classList.add('bg-gray-500');
+                button.disabled = true;
+
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        // Fetch invoices when the page loads
+        document.addEventListener('DOMContentLoaded', fetchInvoices);
+    </script>
+</body>
+</html>
