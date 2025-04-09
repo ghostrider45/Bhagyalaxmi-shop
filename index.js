@@ -279,7 +279,7 @@ server.put('/api/invoices/:id/pay', async (req, res) => {
 });
 server.get('/api/invoices/party', async (req, res) => {
     try {
-        const snapshot = await getDocs(collection(db, 'purchase'));
+        const snapshot = await getDocs(collection('purchase'));
 
         const invoices = snapshot.docs.map(doc => {
             const data = doc.data();
@@ -325,6 +325,7 @@ server.get('/api/invoices/party', async (req, res) => {
         return res.status(500).json({ success: false, message: 'Failed to fetch invoices' });
     }
 });
+
 
 
 // Start server
