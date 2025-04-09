@@ -44,6 +44,15 @@
             background-color: #f8f9fa;
         }
 
+        .results-table tbody tr:hover {
+            background-color: #f1f1f1;
+            cursor: pointer;
+        }
+
+        .results-table tbody tr:nth-child(even) {
+            background-color: #fafafa;
+        }
+
         .status-unpaid {
             color: #dc3545;
             font-weight: bold;
@@ -68,8 +77,6 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             fetchAllInvoices();
-            
-            // Add event listener for live filtering
             document.getElementById('partySearch').addEventListener('input', filterInvoices);
         });
 
@@ -93,16 +100,11 @@
 
         function filterInvoices() {
             const partyName = document.getElementById('partySearch').value.trim().toLowerCase();
-            
-            if (!partyName) {
-                displayResults(allInvoices);
-                return;
-            }
+            if (!partyName) return displayResults(allInvoices);
 
-            const filteredInvoices = allInvoices.filter(invoice => 
+            const filteredInvoices = allInvoices.filter(invoice =>
                 invoice.party_name.toLowerCase().includes(partyName)
             );
-
             displayResults(filteredInvoices);
         }
 
