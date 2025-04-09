@@ -76,7 +76,8 @@
         async function fetchAllInvoices() {
             try {
                 console.log("Fetching all invoices...");
-                const response = await fetch('http://localhost:3001/api/invoices/party');
+                const apiUrl = `${window.location.origin}/api/invoices/party`;
+                const response = await fetch(apiUrl);
                 if (!response.ok) throw new Error('Failed to fetch invoices');
 
                 const data = await response.json();
