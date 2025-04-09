@@ -1,38 +1,120 @@
 const express = require('express');
 const path = require('path');
-const { initializeApp } = require('firebase/app');
-const { getFirestore, collection, getDocs, doc, getDoc, updateDoc, addDoc, query, where, setDoc } = require('firebase/firestore');
 const cors = require('cors');
+const admin = require('firebase-admin');
+require('dotenv').config();
 
-// Firebase configuration
-const firebaseConfig = {
-    apiKey: "AIzaSyA1PUY86j7P-oiZxm3g0aT3QhPStWrWa9c",
-    authDomain: "bhagyalaxmapp.com",
-    projectId: "bhagyalaxmi-d3b97",
-    storageBucket: "bhagyalaxmi-d3b97.firebasestorage.app",
-    messagingSenderId: "517203282380",
-    appId: "1:517203282380:web:620af466814cc3ad79b569"
+// Initialize Firebase Admin SDK with service account file
+try {
+    const serviceAccount = require('./service_account_key.json');
+
+    // Initialize the app with admin credentials if not already initialized
+    if (admin.apps.length === 0) {
+        admin.initializeApp({
+            credential: admin.credential.cert(serviceAccount)
+        });
+        console.log('Firebase Admin SDK initialized successfully');
+    }
+} catch (error) {
+    console.error('Error initializing Firebase Admin SDK:', error);
+    console.error('Please make sure you have a service_account_key.json file in your project root');
+}
+
+// Get Firestore database
+const db = admin.firestore();
+
+// Helper functions for Firestore operations
+const FirestoreHelper = {
+    // Collection reference
+    collection: (collectionPath) => db.collection(collectionPath),
+
+    // Document reference
+    doc: (collectionPath, docId) => db.collection(collectionPath).doc(docId),
+
+    // Get a document
+    getDoc: async (docRef) => {
+        const doc = await docRef.get();
+        return {
+            exists: () => doc.exists,
+            data: () => doc.data(),
+            id: doc.id
+        };
+    },
+
+    // Add a document to a collection
+    addDoc: async (collectionRef, data) => {
+        const docRef = await collectionRef.add(data);
+        return { id: docRef.id };
+    },
+
+    // Update a document
+    updateDoc: async (docRef, data) => {
+        await docRef.update(data);
+    },
+
+    // Set a document (create or overwrite)
+    setDoc: async (docRef, data, options) => {
+        if (options && options.merge) {
+            await docRef.set(data, { merge: true });
+        } else {
+            await docRef.set(data);
+        }
+    },
+
+    // Query a collection
+    query: (collectionRef, ...queryConstraints) => {
+        let query = collectionRef;
+
+        for (const constraint of queryConstraints) {
+            if (constraint.type === 'where') {
+                query = query.where(constraint.field, constraint.operator, constraint.value);
+            }
+        }
+
+        return query;
+    },
+
+    // Where clause for queries
+    where: (field, operator, value) => ({
+        type: 'where',
+        field,
+        operator,
+        value
+    }),
+
+    // Get documents from a query
+    getDocs: async (query) => {
+        const snapshot = await query.get();
+        return {
+            empty: snapshot.empty,
+            docs: snapshot.docs.map(doc => ({
+                id: doc.id,
+                data: () => doc.data(),
+                exists: doc.exists
+            }))
+        };
+    }
 };
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
 
 // Initialize Express
 const server = express();
-const port = 3001;
+const port = process.env.PORT || 3001;
 
 // Middleware
 server.use(cors());
 server.use(express.json());
+
+// Extract Firestore helper functions
+const { collection, doc, getDoc, addDoc, updateDoc, setDoc, query, where, getDocs } = FirestoreHelper;
 
 // API Routes BEFORE static file serving
 server.get('/api/invoices', async (req, res) => {
     console.log('Fetching unpaid invoices...');
     try {
         // Create query with filter for payment_status = "unpaid"
+        const purchaseCollection = collection('purchase');
         const purchaseQuery = query(
-            collection(db, 'purchase'),
+            purchaseCollection,
             where('payment_status', '==', 'unpaid')
         );
 
@@ -46,13 +128,10 @@ server.get('/api/invoices', async (req, res) => {
             });
         }
 
-        const invoices = [];
-        snapshot.forEach(doc => {
-            invoices.push({
-                id: doc.id,
-                ...doc.data()
-            });
-        });
+        const invoices = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
 
         console.log(`Found ${invoices.length} unpaid invoices`);
         return res.status(200).json({
@@ -69,6 +148,34 @@ server.get('/api/invoices', async (req, res) => {
         });
     }
 });
+// API Route to get the latest serial number
+server.get('/api/latest-serial-number', async (req, res) => {
+    try {
+        // Reference to the counters collection
+        const counterRef = doc('counters', 'invoices');
+        const counterSnap = await getDoc(counterRef);
+
+        let nextSerialNumber = 1; // Default starting value
+
+        if (counterSnap.exists()) {
+            // If counter document exists, get the current value and add 1 for the next number
+            nextSerialNumber = counterSnap.data().currentValue + 1;
+        }
+
+        return res.status(200).json({
+            success: true,
+            serialNumber: nextSerialNumber
+        });
+    } catch (error) {
+        console.error('Error fetching latest serial number:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to fetch latest serial number',
+            error: error.message
+        });
+    }
+});
+
 // API Route to save invoice data
 server.post('/api/invoices', async (req, res) => {
     const invoiceData = req.body; // Invoice data from the request body
@@ -82,7 +189,7 @@ server.post('/api/invoices', async (req, res) => {
             serialNumber = parseInt(invoiceData.serialNumber);
         } else {
             // Otherwise get the next serial number from the counters collection
-            const counterRef = doc(db, 'counters', 'invoices');
+            const counterRef = doc('counters', 'invoices');
             const counterSnap = await getDoc(counterRef);
 
             serialNumber = 1; // Default starting value
@@ -94,13 +201,14 @@ server.post('/api/invoices', async (req, res) => {
         }
 
         // Update or create the counter document
-        await setDoc(doc(db, 'counters', 'invoices'), { currentValue: serialNumber }, { merge: true });
+        const counterRef = doc('counters', 'invoices');
+        await setDoc(counterRef, { currentValue: serialNumber }, { merge: true });
 
         // Add serial number to invoice data
         invoiceData.serialNumber = serialNumber;
 
         // Reference to the 'purchase' collection
-        const purchaseRef = collection(db, 'purchase');
+        const purchaseRef = collection('purchase');
 
         // Add a new document with the invoice data
         const docRef = await addDoc(purchaseRef, invoiceData);
