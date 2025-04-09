@@ -6,7 +6,7 @@ require('dotenv').config();
 
 // Initialize Firebase Admin SDK with service account file
 try {
-    const serviceAccount = require('./service_account_key.json');
+    const serviceAccount = require(process.env.FIREBASE_SERVICE_ACCOUNT);
 
     // Initialize the app with admin credentials if not already initialized
     if (admin.apps.length === 0) {
